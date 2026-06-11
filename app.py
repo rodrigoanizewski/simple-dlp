@@ -8,6 +8,34 @@ from yt_dlp import YoutubeDL
 app = Flask(__name__)
 
 
+def build_ydl_opts(mode, video_quality, audio_quality):
+    vq = f'[height<={video_quality}]' if video_quality != 'best' else ''
+    aq = f'[abr<={audio_quality}]' if audio_quality != 'best' else ''
+    base = os.path.join(os.path.expanduser('~'), 'Downloads', '%(title)s.%(ext)s')
+
+    if mode == 'audio':
+        return {
+            'format': f'bestaudio{aq}[ext=m4a]/bestaudio{aq}',
+            'outtmpl': base,
+            'noplaylist': True,
+            'quiet': True,
+        }
+    if mode == 'video':
+        return {
+            'format': f'bestvideo{vq}[ext=mp4]/bestvideo{vq}',
+            'outtmpl': base,
+            'noplaylist': True,
+            'quiet': True,
+        }
+    return {
+        'format': f'bestvideo{vq}[ext=mp4]+bestaudio{aq}[ext=m4a]/best{vq}[ext=mp4]/best',
+        'merge_output_format': 'mp4',
+        'outtmpl': base,
+        'noplaylist': True,
+        'quiet': True,
+    }
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -17,6 +45,9 @@ def index():
 def download():
     data = request.get_json()
     url = data.get('url', '')
+    mode = data.get('mode', 'video+audio')
+    video_quality = data.get('video_quality', 'best')
+    audio_quality = data.get('audio_quality', 'best')
 
     if not url:
         return Response(
@@ -30,14 +61,8 @@ def download():
         q.put(d)
 
     def run_download():
-        ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            'merge_output_format': 'mp4',
-            'outtmpl': os.path.join(os.path.expanduser('~'), 'Downloads', '%(title)s.%(ext)s'),
-            'noplaylist': True,
-            'quiet': True,
-            'progress_hooks': [progress_hook],
-        }
+        ydl_opts = build_ydl_opts(mode, video_quality, audio_quality)
+        ydl_opts['progress_hooks'] = [progress_hook]
         try:
             with YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])

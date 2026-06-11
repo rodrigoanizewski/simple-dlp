@@ -18,6 +18,37 @@
             class="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg mb-4 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition"
         />
 
+        <label class="text-gray-400 text-xs mb-1 block">Mode</label>
+        <select id="modeSelect" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg mb-4 text-white text-sm focus:outline-none focus:border-blue-500 transition">
+            <option value="video+audio">Video + Audio</option>
+            <option value="video">Video Only</option>
+            <option value="audio">Audio Only</option>
+        </select>
+
+        <div id="videoQualityRow" class="mb-4">
+            <label class="text-gray-400 text-xs mb-1 block">Video Quality</label>
+            <select id="videoQualitySelect" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500 transition">
+                <option value="best">Best</option>
+                <option value="2160">4K (2160p)</option>
+                <option value="1440">1440p</option>
+                <option value="1080">1080p</option>
+                <option value="720">720p</option>
+                <option value="480">480p</option>
+                <option value="360">360p</option>
+            </select>
+        </div>
+
+        <div id="audioQualityRow" class="mb-4">
+            <label class="text-gray-400 text-xs mb-1 block">Audio Quality</label>
+            <select id="audioQualitySelect" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500 transition">
+                <option value="best">Best</option>
+                <option value="192">192 kbps</option>
+                <option value="128">128 kbps</option>
+                <option value="96">96 kbps</option>
+                <option value="64">64 kbps</option>
+            </select>
+        </div>
+
         <button
             id="downloadBtn"
             class="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-lg font-semibold transition"
@@ -35,10 +66,23 @@
 
     <script>
         const urlInput = document.getElementById('urlInput');
+        const modeSelect = document.getElementById('modeSelect');
+        const videoQualityRow = document.getElementById('videoQualityRow');
+        const audioQualityRow = document.getElementById('audioQualityRow');
+        const videoQualitySelect = document.getElementById('videoQualitySelect');
+        const audioQualitySelect = document.getElementById('audioQualitySelect');
         const downloadBtn = document.getElementById('downloadBtn');
         const statusArea = document.getElementById('statusArea');
         const progressFill = document.getElementById('progressFill');
         const statusText = document.getElementById('statusText');
+
+        function toggleQualityRows() {
+            const mode = modeSelect.value;
+            videoQualityRow.classList.toggle('hidden', mode === 'audio');
+            audioQualityRow.classList.toggle('hidden', mode === 'video');
+        }
+        modeSelect.addEventListener('change', toggleQualityRows);
+        toggleQualityRows();
 
         function formatPercent(raw) {
             const num = parseFloat(raw);
@@ -87,7 +131,12 @@
                 const response = await fetch('/download', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url })
+                    body: JSON.stringify({
+                        url,
+                        mode: modeSelect.value,
+                        video_quality: videoQualitySelect.value,
+                        audio_quality: audioQualitySelect.value,
+                    })
                 });
 
                 if (!response.ok || !response.body) {
