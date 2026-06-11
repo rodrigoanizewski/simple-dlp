@@ -9,14 +9,34 @@
 <body class="bg-gray-950 text-white min-h-screen flex items-center justify-center">
     <div class="w-full max-w-lg mx-4">
         <h1 class="text-3xl font-bold mb-1">simple-dlp</h1>
-        <p class="text-gray-400 mb-8">YouTube downloader optimized for video editors</p>
+        <p class="text-gray-400 mb-6">YouTube downloader optimized for video editors</p>
 
-        <input
-            type="text"
-            id="urlInput"
-            placeholder="Paste YouTube URL here..."
-            class="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg mb-4 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition"
-        />
+        <div class="flex gap-2 mb-4">
+            <input
+                type="text"
+                id="urlInput"
+                placeholder="Paste YouTube URL here..."
+                class="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition"
+            />
+            <button
+                id="loadPlaylistBtn"
+                class="px-4 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium whitespace-nowrap transition"
+            >
+                Load List
+            </button>
+        </div>
+
+        <div id="playlistContainer" class="hidden mb-4">
+            <div class="bg-gray-800 border border-gray-700 rounded-lg p-3">
+                <p id="playlistTitle" class="text-sm font-semibold mb-2 truncate"></p>
+                <p id="singleVideoTitle" class="text-sm text-gray-400 hidden"></p>
+                <div id="playlistEntries" class="max-h-48 overflow-y-auto space-y-1 mb-2"></div>
+                <div id="playlistActions" class="flex gap-2 text-xs">
+                    <button id="selectAllBtn" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded hidden">Select All</button>
+                    <button id="deselectAllBtn" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded hidden">Deselect All</button>
+                </div>
+            </div>
+        </div>
 
         <label class="text-gray-400 text-xs mb-1 block">Mode</label>
         <select id="modeSelect" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg mb-4 text-white text-sm focus:outline-none focus:border-blue-500 transition">
@@ -49,6 +69,34 @@
             </select>
         </div>
 
+        <div class="mb-4">
+            <button id="clipToggle" class="flex items-center gap-2 text-gray-400 text-xs hover:text-white transition">
+                <span id="clipArrow">&#9654;</span> Clip
+            </button>
+            <div id="clipSection" class="hidden mt-2 pl-4">
+                <div class="flex gap-3">
+                    <div class="flex-1">
+                        <label class="text-gray-500 text-xs mb-1 block">Start (HH:MM:SS)</label>
+                        <input
+                            type="text"
+                            id="clipStart"
+                            placeholder="0:00"
+                            class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-600 focus:outline-none focus:border-blue-500 transition"
+                        />
+                    </div>
+                    <div class="flex-1">
+                        <label class="text-gray-500 text-xs mb-1 block">End (HH:MM:SS)</label>
+                        <input
+                            type="text"
+                            id="clipEnd"
+                            placeholder=""
+                            class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-600 focus:outline-none focus:border-blue-500 transition"
+                        />
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <button
             id="downloadBtn"
             class="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-lg font-semibold transition"
@@ -66,15 +114,32 @@
 
     <script>
         const urlInput = document.getElementById('urlInput');
+        const loadPlaylistBtn = document.getElementById('loadPlaylistBtn');
+        const playlistContainer = document.getElementById('playlistContainer');
+        const playlistTitle = document.getElementById('playlistTitle');
+        const singleVideoTitle = document.getElementById('singleVideoTitle');
+        const playlistEntries = document.getElementById('playlistEntries');
+        const selectAllBtn = document.getElementById('selectAllBtn');
+        const deselectAllBtn = document.getElementById('deselectAllBtn');
+        const playlistActions = document.getElementById('playlistActions');
         const modeSelect = document.getElementById('modeSelect');
         const videoQualityRow = document.getElementById('videoQualityRow');
         const audioQualityRow = document.getElementById('audioQualityRow');
         const videoQualitySelect = document.getElementById('videoQualitySelect');
         const audioQualitySelect = document.getElementById('audioQualitySelect');
+        const clipToggle = document.getElementById('clipToggle');
+        const clipArrow = document.getElementById('clipArrow');
+        const clipSection = document.getElementById('clipSection');
+        const clipStart = document.getElementById('clipStart');
+        const clipEnd = document.getElementById('clipEnd');
         const downloadBtn = document.getElementById('downloadBtn');
         const statusArea = document.getElementById('statusArea');
         const progressFill = document.getElementById('progressFill');
         const statusText = document.getElementById('statusText');
+
+        let playlistEntriesData = [];
+        let isPlaylist = false;
+        let isLoadingList = false;
 
         function toggleQualityRows() {
             const mode = modeSelect.value;
@@ -84,12 +149,210 @@
         modeSelect.addEventListener('change', toggleQualityRows);
         toggleQualityRows();
 
+        clipToggle.addEventListener('click', () => {
+            const isHidden = clipSection.classList.toggle('hidden');
+            clipArrow.innerHTML = isHidden ? '&#9654;' : '&#9660;';
+        });
+
+        function formatDuration(seconds) {
+            if (seconds == null) return '';
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            const h = Math.floor(m / 60);
+            return h ? h + ':' + String(m % 60).padStart(2, '0') + ':' + String(s).padStart(2, '0')
+                     : m + ':' + String(s).padStart(2, '0');
+        }
+
+        function renderPlaylist() {
+            playlistEntries.innerHTML = '';
+            if (playlistEntriesData.length === 0) return;
+
+            let checkedCount = 0;
+            playlistEntriesData.forEach((entry, idx) => {
+                const row = document.createElement('label');
+                row.className = 'flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-700 cursor-pointer text-sm';
+
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = true;
+                cb.className = 'accent-blue-600 cursor-pointer';
+                cb.dataset.index = entry.index;
+                cb.addEventListener('change', updateDownloadButton);
+
+                const dur = entry.duration ? formatDuration(entry.duration) : '';
+                const durSpan = document.createElement('span');
+                durSpan.className = 'text-gray-500 ml-auto text-xs';
+                durSpan.textContent = dur;
+
+                const titleSpan = document.createElement('span');
+                titleSpan.className = 'truncate';
+                titleSpan.textContent = entry.index + '. ' + entry.title;
+
+                row.appendChild(cb);
+                row.appendChild(titleSpan);
+                row.appendChild(durSpan);
+                playlistEntries.appendChild(row);
+                if (cb.checked) checkedCount++;
+            });
+
+            selectAllBtn.classList.remove('hidden');
+            deselectAllBtn.classList.remove('hidden');
+            updateDownloadButton();
+        }
+
+        function getSelectedItems() {
+            const cbs = playlistEntries.querySelectorAll('input[type=checkbox]:checked');
+            const indices = [];
+            cbs.forEach(cb => indices.push(parseInt(cb.dataset.index)));
+            if (indices.length === 0) return '';
+            const ranges = [];
+            let start = indices[0], end = indices[0];
+            for (let i = 1; i <= indices.length; i++) {
+                if (indices[i] === end + 1) {
+                    end = indices[i];
+                } else {
+                    ranges.push(start === end ? String(start) : start + '-' + end);
+                    start = indices[i];
+                    end = indices[i];
+                }
+            }
+            return ranges.join(',');
+        }
+
+        function updateDownloadButton() {
+            if (!isPlaylist) {
+                downloadBtn.textContent = 'Download High Quality';
+                return;
+            }
+            if (isLoadingList) {
+                downloadBtn.textContent = 'Loading...';
+                return;
+            }
+            const cbs = playlistEntries.querySelectorAll('input[type=checkbox]:checked');
+            const count = cbs.length;
+            downloadBtn.textContent = count > 0 ? 'Download Selected (' + count + ')' : 'Download High Quality';
+        }
+
+        selectAllBtn.addEventListener('click', () => {
+            playlistEntries.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
+            updateDownloadButton();
+        });
+
+        deselectAllBtn.addEventListener('click', () => {
+            playlistEntries.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+            updateDownloadButton();
+        });
+
+        async function loadPlaylist() {
+            const url = urlInput.value.trim();
+            if (!url) {
+                statusArea.classList.remove('hidden');
+                progressFill.style.width = '0%';
+                statusText.textContent = 'Please enter a URL first.';
+                return;
+            }
+
+            isLoadingList = true;
+            loadPlaylistBtn.disabled = true;
+            loadPlaylistBtn.textContent = 'Loading...';
+            playlistContainer.classList.add('hidden');
+            playlistEntriesData = [];
+            isPlaylist = false;
+            updateDownloadButton();
+
+            try {
+                const response = await fetch('/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url, action: 'list' })
+                });
+
+                if (!response.ok || !response.body) {
+                    statusArea.classList.remove('hidden');
+                    statusText.textContent = 'Error: Server returned ' + response.status;
+                    isLoadingList = false;
+                    loadPlaylistBtn.disabled = false;
+                    loadPlaylistBtn.textContent = 'Load List';
+                    updateDownloadButton();
+                    return;
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const parts = buffer.split('\n\n');
+                    buffer = parts.pop() || '';
+
+                    for (const part of parts) {
+                        const dataLine = part.replace(/^data:\s*/gm, '').trim();
+                        if (!dataLine) continue;
+                        try {
+                            const event = JSON.parse(dataLine);
+                            handleListEvent(event);
+                        } catch (e) {}
+                    }
+                }
+            } catch (err) {
+                statusArea.classList.remove('hidden');
+                progressFill.style.width = '0%';
+                statusText.textContent = 'Error: ' + err.message;
+            }
+
+            isLoadingList = false;
+            loadPlaylistBtn.disabled = false;
+            loadPlaylistBtn.textContent = 'Load List';
+            updateDownloadButton();
+        }
+
+        function handleListEvent(event) {
+            statusArea.classList.add('hidden');
+            playlistContainer.classList.remove('hidden');
+
+            if (event.status === 'playlist_meta') {
+                playlistTitle.textContent = event.title + ' (' + event.count + ' videos)';
+                playlistTitle.classList.remove('hidden');
+                singleVideoTitle.classList.add('hidden');
+                isPlaylist = true;
+            } else if (event.status === 'playlist_entry') {
+                playlistEntriesData.push(event);
+            } else if (event.status === 'playlist_done') {
+                if (isPlaylist) {
+                    renderPlaylist();
+                }
+            } else if (event.status === 'single_video') {
+                playlistTitle.classList.add('hidden');
+                singleVideoTitle.classList.remove('hidden');
+                singleVideoTitle.textContent = event.title + (event.duration ? ' (' + formatDuration(event.duration) + ')' : '');
+                selectAllBtn.classList.add('hidden');
+                deselectAllBtn.classList.add('hidden');
+                playlistEntries.innerHTML = '';
+                playlistEntriesData = [];
+                isPlaylist = false;
+                updateDownloadButton();
+            } else if (event.status === 'error') {
+                playlistContainer.classList.add('hidden');
+                statusArea.classList.remove('hidden');
+                progressFill.style.width = '0%';
+                statusText.textContent = 'Error: ' + (event.message || 'Unknown error');
+                isPlaylist = false;
+                updateDownloadButton();
+            }
+        }
+
+        loadPlaylistBtn.addEventListener('click', loadPlaylist);
+
         function formatPercent(raw) {
             const num = parseFloat(raw);
             return isNaN(num) ? 0 : Math.round(num);
         }
 
-        function handleEvent(event) {
+        function handleDownloadEvent(event) {
             if (event.status === 'waiting') {
                 statusArea.classList.remove('hidden');
                 progressFill.style.width = '0%';
@@ -114,7 +377,7 @@
                 progressFill.style.width = '0%';
                 statusText.textContent = 'Error: ' + (event.message || 'Unknown error');
                 downloadBtn.disabled = false;
-                downloadBtn.textContent = 'Download High Quality';
+                updateDownloadButton();
             }
         }
 
@@ -133,9 +396,13 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         url,
+                        action: 'download',
                         mode: modeSelect.value,
                         video_quality: videoQualitySelect.value,
                         audio_quality: audioQualitySelect.value,
+                        clip_start: clipStart.value.trim(),
+                        clip_end: clipEnd.value.trim(),
+                        playlist_items: isPlaylist ? getSelectedItems() : '',
                     })
                 });
 
@@ -163,10 +430,8 @@
                         if (!dataLine) continue;
                         try {
                             const event = JSON.parse(dataLine);
-                            handleEvent(event);
-                        } catch (e) {
-                            // ignore malformed lines
-                        }
+                            handleDownloadEvent(event);
+                        } catch (e) {}
                     }
                 }
             } catch (err) {
@@ -174,7 +439,7 @@
                 progressFill.style.width = '0%';
                 statusText.textContent = 'Error: ' + err.message;
                 downloadBtn.disabled = false;
-                downloadBtn.textContent = 'Download High Quality';
+                updateDownloadButton();
             }
         });
 
